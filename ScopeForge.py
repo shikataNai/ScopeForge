@@ -12,16 +12,16 @@ def setup_logging():
     )
 
 
-def parse_ip_line(ip_entry_line):
+def parse_ip_line(ip_entry_line, include_network=False, include_broadcast=False):
     ip_entry_line = ip_entry_line.strip()
     if not ip_entry_line or ip_entry_line.startswith('#') or ip_entry_line.startswith('//'):
         return []
 
     if '-' in ip_entry_line:
         try:
-            start_ip, end_ip = ip_entry_line.split('-')
-            start_ip_obj = ipaddress.IPv4Address(start_ip.strip())
-            end_ip_obj = ipaddress.IPv4Address(end_ip.strip())
+            start_ip_str, end_ip_str = ip_entry_line.split('-')
+            start_ip_obj = ipaddress.IPv4Address(start_ip_str.strip())
+            end_ip_obj = ipaddress.IPv4Address(end_ip_str.strip())
             return [ipaddress.IPv4Address(ip) for ip in range(int(start_ip_obj), int(end_ip_obj) + 1)]
         except Exception as e:
             logging.warning(f"Failed to parse IP range '{ip_entry_line}': {e}")
@@ -29,8 +29,14 @@ def parse_ip_line(ip_entry_line):
 
     try:
         network = ipaddress.ip_network(ip_entry_line.strip(), strict=False)
-        # Include all addresses including network and broadcast
-        return list(network)
+        if include_network and include_broadcast:
+            return list(network)
+        hosts = list(network.hosts())
+        if include_network:
+            hosts.insert(0, network.network_address)
+        if include_broadcast:
+            hosts.append(network.broadcast_address)
+        return hosts
     except ValueError:
         try:
             return [ipaddress.IPv4Address(ip_entry_line.strip())]
@@ -39,90 +45,93 @@ def parse_ip_line(ip_entry_line):
             return []
 
 
-def collect_ip_set_from_file(filepath):
-    all_ips = set()
+def collect_ip_set(filepath, include_network=False, include_broadcast=False):
+    ip_set = set()
     try:
-        with open(filepath, 'r') as ip_file:
-            for line in ip_file:
-                all_ips.update(parse_ip_line(line))
+        with open(filepath, 'r') as f:
+            for line in f:
+                ip_set.update(parse_ip_line(line, include_network, include_broadcast))
     except FileNotFoundError:
         logging.error(f"File not found: {filepath}")
         sys.exit(1)
     except Exception as e:
-        logging.error(f"Error reading file '{filepath}': {e}")
+        logging.error(f"Error reading {filepath}: {e}")
         sys.exit(1)
-    return all_ips
+    return ip_set
 
 
-def write_aggregated_scope_file(ip_set, output_path):
+def aggregate_ip_set(ip_set):
+    """Collapse a set of IPs to minimal CIDR blocks."""
+    return list(ipaddress.collapse_addresses(sorted(ip_set, key=int)))
+
+
+def write_list(file_path, entries):
     try:
-        aggregated_networks = list(ipaddress.collapse_addresses(sorted(ip_set, key=int)))
-        with open(output_path, 'w') as f:
-            for network in aggregated_networks:
-                f.write(str(network) + '\n')
-        logging.info(f"Aggregated scope written to: {output_path}")
+        with open(file_path, 'w') as f:
+            for entry in entries:
+                f.write(str(entry) + '\n')
+        logging.info(f"Written file: {file_path}")
     except Exception as e:
-        logging.error(f"Failed to write aggregated scope: {e}")
-        sys.exit(1)
-
-
-def write_individual_ip_file(ip_set, output_path):
-    try:
-        with open(output_path, 'w') as f:
-            for ip in sorted(ip_set, key=lambda ip: int(ip)):
-                f.write(str(ip) + '\n')
-        logging.info(f"All individual IPs written to: {output_path}")
-    except Exception as e:
-        logging.error(f"Failed to write individual IPs: {e}")
+        logging.error(f"Failed writing {file_path}: {e}")
         sys.exit(1)
 
 
 def build_argument_parser():
     parser = argparse.ArgumentParser(
-        description="Create a refined scope by removing out-of-scope addresses from in-scope lists."
+        prog="ScopeForge",
+        description="Build and refine in-scope and out-of-scope lists for pentesting."
     )
-    parser.add_argument("in_scope_file", help="File containing all in-scope IPs, CIDRs, or ranges")
-    parser.add_argument("out_scope_file", help="File containing out-of-scope IPs, CIDRs, or ranges")
-    parser.add_argument("-o", "--output-dir", default=".", help="Directory to write output files (default: current dir)")
-    parser.add_argument("--all-addresses", action="store_true", help="Also output every individual IP to a separate file")
-    parser.add_argument("--summary-only", action="store_true", help="Only display summary of in/out/final counts, no files written")
-    parser.add_argument("--fail-on-empty-scope", action="store_true", help="Fail if final scope is empty after exclusion")
+    parser.add_argument("in_scope_file", help="File of in-scope IPs/CIDRs/ranges")
+    parser.add_argument("out_scope_file", help="File of out-of-scope IPs/CIDRs/ranges")
+    parser.add_argument("-o", "--output-dir", default=".", help="Output directory")
+    parser.add_argument("--all-addresses", action="store_true",
+                        help="Dump every final IP individually")
+    parser.add_argument("--summary-only", action="store_true",
+                        help="Show counts only, no files")
+    parser.add_argument("--fail-on-empty-scope", action="store_true",
+                        help="Exit code 2 if final scope empty")
+    parser.add_argument("--include-network", action="store_true",
+                        help="Include .0 network addresses when expanding CIDRs")
+    parser.add_argument("--include-broadcast", action="store_true",
+                        help="Include broadcast addresses when expanding CIDRs")
     return parser
 
 
 def main():
     setup_logging()
-    arg_parser = build_argument_parser()
-    arguments = arg_parser.parse_args()
+    args = build_argument_parser().parse_args()
 
-    resolved_output_directory = os.path.abspath(os.path.expanduser(arguments.output_dir))
-    if not arguments.summary_only:
-        os.makedirs(resolved_output_directory, exist_ok=True)
+    output_dir = os.path.abspath(os.path.expanduser(args.output_dir))
+    if not args.summary_only:
+        os.makedirs(output_dir, exist_ok=True)
 
-    all_in_scope_ips = collect_ip_set_from_file(arguments.in_scope_file)
-    excluded_ips = collect_ip_set_from_file(arguments.out_scope_file)
-    final_scope_ips = all_in_scope_ips - excluded_ips
+    in_ips = collect_ip_set(args.in_scope_file, args.include_network, args.include_broadcast)
+    out_ips = collect_ip_set(args.out_scope_file, args.include_network, args.include_broadcast)
 
-    logging.info(f"In-scope addresses parsed: {len(all_in_scope_ips)}")
-    logging.info(f"Out-of-scope addresses parsed: {len(excluded_ips)}")
-    logging.info(f"Remaining in-scope after exclusion: {len(final_scope_ips)}")
+    final_ips = in_ips - out_ips
 
-    if arguments.fail_on_empty_scope and not final_scope_ips:
-        logging.error("Final scope is empty after exclusion and --fail-on-empty-scope is set. Exiting.")
+    logging.info(f"In-scope count: {len(in_ips)}")
+    logging.info(f"Excluded count: {len(out_ips)}")
+    logging.info(f"Final count: {len(final_ips)}")
+
+    if args.fail_on_empty_scope and not final_ips:
+        logging.error("Empty final scope, exiting with code 2")
         sys.exit(2)
 
-    if arguments.summary_only:
+    if args.summary_only:
         return
 
-    cleaned_scope_output = os.path.join(resolved_output_directory, "scope_cleaned")
-    write_aggregated_scope_file(final_scope_ips, cleaned_scope_output)
+    # Write aggregated in-scope
+    cleaned_cidrs = aggregate_ip_set(final_ips)
+    write_list(os.path.join(output_dir, "scope_cleaned"), cleaned_cidrs)
 
-    if arguments.all_addresses:
-        every_ip_output = os.path.join(resolved_output_directory, "scope_cleaned_every_ip_listed")
-        write_individual_ip_file(final_scope_ips, every_ip_output)
+    # Optionally dump individual
+    if args.all_addresses:
+        write_list(os.path.join(output_dir, "scope_cleaned_every_ip_listed"), sorted(final_ips, key=int))
 
-    exclusions_output = os.path.join(resolved_output_directory, "out_of_scope_addresses")
-    write_individual_ip_file(excluded_ips, exclusions_output)
+    # Always write aggregated exclusions
+    aggregated_out = aggregate_ip_set(out_ips)
+    write_list(os.path.join(output_dir, "out_of_scope_aggregated"), aggregated_out)
 
 
 if __name__ == "__main__":
