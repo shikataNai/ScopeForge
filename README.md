@@ -28,13 +28,13 @@ This tool is ideal for preparing clean scope files for any assessment.
 ## Usage
 
 ```bash
-python3 ScopeForge.py in_scope_file out_scope_file [options]
+python3 ScopeForge.py all_addresses out_of_scope_file [options]
 ```
 
 ### Positional Arguments:
 
-* `in_scope_file`         File containing all in-scope IPs, CIDRs, or ranges
-* `out_scope_file`        File containing all exclusions to be removed from in-scope list
+* `uncleaned_scope`         File containing all in-scope IPs, CIDRs, or ranges
+* `out_of_scope_file`        File containing all exclusions to be removed from in-scope list
 
 ### Optional Arguments:
 
@@ -51,7 +51,7 @@ python3 ScopeForge.py in_scope_file out_scope_file [options]
 ### Basic usage:
 
 ```bash
-python3 ScopeForge.py all_addresses out_of_scope_all_addresses
+python3 ScopeForge.py all_addresses out_of_scope_file
 ```
 
 Outputs:
@@ -62,13 +62,13 @@ Outputs:
 ### Save output to a custom directory:
 
 ```bash
-python3 ScopeForge.py all_addresses out_of_scope_all_addresses -o ~/testing/targets/scope_cleaned
+python3 ScopeForge.py all_addresses out_of_scope_file -o ~/testing/targets/scope_cleaned
 ```
 
 ### Include every resolved IP in output:
 
 ```bash
-python3 ScopeForge.py all_addresses out_of_scope_all_addresses --all-addresses
+python3 ScopeForge.py all_addresses out_of_scope_file --all-addresses
 ```
 
 Outputs:
@@ -80,7 +80,7 @@ Outputs:
 ### Only show counts, no files:
 
 ```bash
-python3 ScopeForge.py all_addresses out_of_scope_all_addresses --summary-only
+python3 ScopeForge.py all_addresses out_of_scope_file --summary-only
 ```
 
 Outputs (to stdout):
@@ -94,7 +94,7 @@ Final cleaned entries : 960
 ### Error on empty result:
 
 ```bash
-python3 ScopeForge.py small_scope exclude_all --fail-on-empty-scope
+python3 ScopeForge.py all_addresses out_of_scope_file --fail-on-empty-scope
 ```
 
 Exits with status 1 and prints:
