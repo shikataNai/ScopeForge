@@ -4,9 +4,7 @@
 
 ScopeForge is a command-line Python utility built to help penetration testers craft precise and usable lists of in-scope targets. Its primary purpose is to take a broad scope of IP addresses (often given as CIDRs or ranges) and remove any explicitly defined exclusions, resulting in a refined, actionable set of assets.
 
-Instead of manually subtracting exclusions from client-provided scope files, ScopeForge automates the process. It parses in-scope and out-of-scope lists, removes excluded addresses, aggregates the remaining targets into the smallest possible set of CIDRs, and can optionally output every individual resolved IP. It also always outputs exclusions as aggregated CIDRs for clear visibility.
-
-This tool is ideal for preparing clean scope files for any assessment.
+Instead of manually subtracting exclusions from client-provided scope files, ScopeForge automates the process. It parses in-scope and out-of-scope lists, removes excluded addresses, aggregates the remaining targets into the smallest possible set of CIDRs.
 
 ---
 
